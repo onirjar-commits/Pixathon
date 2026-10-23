@@ -1,20 +1,30 @@
-# AI Usage Log — Gravity Flip Rooms
+# GRAVITY FLIP ROOMS
+## Complete Project Overview, AI Usage Report, and Prompts
 
-**Project:** Gravity Flip Rooms — Gravity-Based Puzzle Game
+### 1. Project Overview
 
-| AI Tool | Purpose of Use | Contribution to the Project |
-|---|---|---|
-| **ChatGPT** | Brainstorming and development planning | Helped develop the game concept, plan gravity-based mechanics, improve gameplay features, and troubleshoot implementation issues. |
-| **Kiro** | AI-assisted software development | Explored structured development workflows, requirement breakdown, and implementation planning for new game features. |
-| **v0 by Vercel** | UI design and prototyping | Explored interface ideas for the game, including menus, buttons, game-status panels, and a polished visual presentation. |
-| **Suno AI** | AI-generated audio | Explored the creation of background music and atmospheric audio suitable for a puzzle game. |
-| **Replit AI** | Coding and debugging assistance | Explored browser-based development assistance for JavaScript logic, error investigation, and iterative game improvements. |
-| **Google Antigravity** | AI-assisted development workflow | Explored agent-assisted coding, project analysis, and potential implementation improvements. |
+**Project Name:** Gravity Flip Rooms  
+**Project Type:** 2D browser-based physics puzzle platformer  
+**Technologies Used:** HTML, CSS, JavaScript, Canvas API  
+**Deployment:** GitHub Pages  
+**Project Purpose:** To create an interactive puzzle game in which players manipulate gravity to navigate obstacles, solve room-based challenges, and reach the exit.
 
-## Responsible AI Usage
+Gravity Flip Rooms is a browser game built around a simple but challenging idea: instead of moving only across the floor, the player can change the direction of gravity to move through different parts of a room. Players must think strategically, understand the environment, avoid hazards, and use their limited gravity flips carefully.
 
-AI tools can support different stages of development, including brainstorming, interface prototyping, programming, audio creation, and code analysis. Their outputs must be reviewed, tested, and adapted to the requirements of the final project.
+The project combines physics-based gameplay, puzzle-solving, visual design, and AI-assisted development. It was developed as a hackathon project, with the aim of transforming a basic game concept into a more polished and engaging experience.
 
-The game’s final integration, gameplay decisions, and testing remain the responsibility of the development team. AI-generated code and creative assets should be checked for correctness, compatibility, and applicable usage rights.
+### 2. Main Game Features
 
-**Accuracy note:** Include a tool in the final submission only if it was actually used. If a tool was considered but not used, describe it as an explored option rather than claiming it contributed to the completed game.
+1. **Eight puzzle rooms:** A sequence of rooms with different challenges and objectives.
+2. **Four-direction gravity:** Gravity can be changed to DOWN, LEFT, UP, or RIGHT.
+3. **Room progression:** Players advance through rooms by completing the required objectives.
+4. **Keys and exits:** Players collect keys to unlock exits and progress.
+5. **Optional crystals:** Collectible crystals provide an additional challenge and bonus credit.
+6. **Gravity Preview:** Players can preview the effect of the next gravity change before committing to it.
+7. **Moving platforms:** Platforms introduce timing and movement challenges.
+8. **Falling blocks:** Environmental objects add additional physics-based obstacles.
+9. **Moving hazards:** Players must observe hazards and plan their movements carefully.
+10. **Interactive puzzles:** Depending on the room, mechanics can include switches, pressure plates, linked doors, timed doors, and movable blocks.
+11. **Limited gravity flips:** A flip limit encourages players to plan their moves rather than change gravity randomly.
+12. **Time and performance tracking:** The interface displays elapsed time and can support medal-based performance evaluation.
+13. **Pause
