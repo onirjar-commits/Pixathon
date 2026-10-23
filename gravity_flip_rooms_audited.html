@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Flip Rooms</title>
+<style>
+:root{--navy:#07152b;--panel:#10213d;--gold:#ffc247;--blue:#284366;--text:#f5f0df;--muted:#aabbd2;--cyan:#65e5d0;--red:#ff7373}
+*{box-sizing:border-box}
+body{margin:0;background:var(--navy);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+button{font:inherit;cursor:pointer;color:var(--text);background:var(--blue);border:1px solid #45658e;border-radius:10px;padding:10px 14px;font-weight:700}
+button:hover{filter:brightness(1.15)}button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.app{max-width:1050px;margin:auto;padding:18px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:clamp(1.5rem,4vw,2.3rem);margin:0;font-weight:900;letter-spacing:.04em}
+h1 span{color:var(--gold)}
+.subtitle{color:var(--muted);margin:4px 0 16px}
+.actions,.stats,.mobile-controls{display:flex;gap:8px;flex-wrap:wrap}
+.stats{margin:14px 0}
+.stat{background:#0e1d35;border:1px solid #2d476a;border-radius:10px;padding:10px 13px;font-size:.88rem}
+.stat b{color:var(--gold)}
+.game-shell{position:relative;border:2px solid #365579;border-radius:16px;padding:8px;background:#0c1b32;overflow:hidden}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/10;background:#071329;border-radius:8px;touch-action:none}
+.overlay{position:absolute;inset:8px;display:flex;align-items:center;justify-content:center;background:#061226df;border-radius:8px;padding:18px}
+.overlay.hidden{display:none}
+.modal{max-width:540px;text-align:center;background:#11233f;border:2px solid var(--gold);border-radius:16px;padding:clamp(18px,4vw,32px)}
+.modal h2{margin:0 0 12px;color:var(--gold);font-size:clamp(1.35rem,4vw,2rem)}
+.modal p{line-height:1.6;color:#c0cde0}
+.modal .actions{justify-content:center;margin-top:18px}
+.primary{background:var(--gold);color:#14213a;border-color:#ffe09a}
+.help{color:var(--muted);font-size:.9rem;line-height:1.8;margin:12px 0}
+.mobile-controls{margin-top:12px;align-items:center}
+.mobile-controls button{min-width:48px;min-height:46px}
+.flip{background:#4de0bb;color:#082a2b;border-color:#8af4d8}
+.spacer{flex:1}
+.message{min-height:24px;color:var(--gold);font-size:.9rem;margin-top:8px}
+footer{color:#7188a7;text-align:center;font-size:.75rem;letter-spacing:.12em;margin:18px 0 4px}
+@media(max-width:600px){.app{padding:12px}.stat{padding:8px;font-size:.78rem}.actions button{padding:9px}.subtitle{font-size:.9rem}.mobile-controls{justify-content:center}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div><h1>GRAVITY <span>FLIP</span> ROOMS</h1><p class="subtitle">A tiny physics puzzle about thinking sideways.</p></div>
+  <div class="actions">
+    <button id="pauseBtn">Ⅱ Pause</button><button id="soundBtn">♫ Sound: Off</button><button id="restartBtn">↻ Restart</button>
+  </div>
+</header>
+<div class="stats">
+  <div class="stat">ROOM <b id="roomLabel">01 / 03</b></div>
+  <div class="stat">GRAVITY <b id="gravityLabel">↓ DOWN</b></div>
+  <div class="stat">FLIPS LEFT <b id="flipsLabel">6</b></div>
+  <div class="stat">KEY <b id="keyLabel">◇ MISSING</b></div>
+  <div class="stat">STATUS <b id="statusLabel">EXPLORE</b></div>
+</div>
+<div class="game-shell">
+<canvas id="game" width="960" height="600" aria-label="Gravity Flip Rooms game"></canvas>
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">GRAVITY FLIP ROOMS</h2>
+    <p id="modalText">Collect the golden key, then reach the exit. Gravity pulls the player and heavy blocks; light blocks drift the opposite way. You have six flips per room.</p>
+    <div class="actions"><button class="primary" id="mainBtn">START GAME</button><button id="helpBtn">HOW TO PLAY</button></div>
+  </div>
+</div>
+</div>
+<div class="help"><b>MOVE</b> ← → / A D &nbsp; <b>JUMP</b> ↑ / W (when grounded)<br>
+<b>FLIP GRAVITY</b> Space or green button &nbsp; <b>PAUSE</b> P &nbsp; <b>RESTART ROOM</b> R<br>
+Gold key unlocks the green exit. Heavy blocks are amber; light blocks are cyan.</div>
+<div class="mobile-controls">
+  <button data-key="left" aria-label="Move left">◀</button><button data-key="right" aria-label="Move right">▶</button><button data-key="jump" aria-label="Jump">▲</button>
+  <span class="spacer"></span><button class="flip" id="flipBtn">↻ FLIP</button>
+</div>
+<div class="message" id="message" aria-live="polite"></div>
+<footer>GRAVITY IS A TOOL. USE IT WISELY.</footer>
+</div>
+<script>
+(() => {
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const $=id=>document.getElementById(id);
+const W=960,H=600,T=40,GRAVITY=0.42,MAX_SPEED=5.0;
+const dirs=[{x:0,y:1,label:'↓ DOWN'},{x:-1,y:0,label:'← LEFT'},{x:0,y:-1,label:'↑ UP'},{x:1,y:0,label:'→ RIGHT'}];
+const levels=[
+ {name:'First Flip',start:{x:95,y:490},key:{x:790,y:170},exit:{x:870,y:500},flips:6,
+  walls:[[0,0,960,24],[0,576,960,24],[0,0,24,600],[936,0,24,600],[210,460,200,24],[470,350,190,24],[700,250,24,150]],
+  heavy:[{x:150,y:360}],light:[{x:550,y:200}]},
+ {name:'Opposite Forces',start:{x:80,y:500},key:{x:820,y:100},exit:{x:870,y:500},flips:6,
+  walls:[[0,0,960,24],[0,576,960,24],[0,0,24,600],[936,0,24,600],[150,440,180,24],[390,340,180,24],[630,240,180,24],[300,130,24,120]],
+  heavy:[{x:220,y:360},{x:520,y:170}],light:[{x:430,y:470},{x:730,y:400}]},
+ {name:'Final Escape',start:{x:75,y:500},key:{x:830,y:80},exit:{x:870,y:500},flips:6,
+  walls:[[0,0,960,24],[0,576,960,24],[0,0,24,600],[936,0,24,600],[140,470,170,24],[370,380,170,24],[600,290,170,24],[350,190,24,100],[690,90,24,120],[455,80,120,24]],
+  heavy:[{x:180,y:350},{x:500,y:280}],light:[{x:300,y:180},{x:730,y:400}]}
+];
+let room=0,player=null,heavy=[],light=[],key=null,exit=null,walls=[],gravity=0,flips=6,hasKey=false,mode='title',paused=false,sound=false,audio=null,last=0,keysDown={},messageTimer=0;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function say(s){$('message').textContent=s;clearTimeout(messageTimer);messageTimer=setTimeout(()=>{$('message').textContent=''},2600)}
+function beep(freq=440,duration=.08){if(!sound)return;try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=freq;o.type='square';g.gain.value=.035;o.connect(g);g.connect(audio.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.stop(audio.currentTime+duration)}catch{}}
+function rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function resetRoom(){
+ const L=levels[room];gravity=0;flips=L.flips;hasKey=false;paused=false;
+ player={x:L.start.x,y:L.start.y,w:28,h:34,vx:0,vy:0,grounded:false,spawn:{...L.start}};
+ walls=L.walls.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3]}));
+ heavy=L.heavy.map((o,i)=>({x:o.x,y:o.y,w:36,h:36,vx:0,vy:0,type:'heavy',id:i}));
+ light=L.light.map((o,i)=>({x:o.x,y:o.y,w:30,h:30,vx:0,vy:0,type:'light',id:i}));
+ key={...L.key,w:22,h:22,taken:false};exit={...L.exit,w:38,h:54};
+ updateHUD();say('Room '+(room+1)+': '+L.name);
+}
+function startGame(){room=0;resetRoom();mode='playing';$('overlay').classList.add('hidden');last=performance.now();beep(600)}
+function updateHUD(){
+ $('roomLabel').textContent=String(room+1).padStart(2,'0')+' / 03';
+ $('gravityLabel').textContent=dirs[gravity].label;$('flipsLabel').textContent=flips;
+ $('keyLabel').textContent=hasKey?'✓ COLLECTED':'◇ MISSING';
+ $('statusLabel').textContent=mode==='won'?'COMPLETE':paused?'PAUSED':flips===0?'NO FLIPS':'EXPLORE';
+}
+function showOverlay(title,text,button='CONTINUE',action){
+ $('modalTitle').textContent=title;$('modalText').textContent=text;$('mainBtn').textContent=button;
+ $('overlay').classList.remove('hidden');$('mainBtn').onclick=action||(()=>{$('overlay').classList.add('hidden');paused=false;mode='playing';updateHUD()});
+}
+function pause(){if(mode!=='playing')return;paused=!paused;if(paused)showOverlay('PAUSED','Take a breath. Your room is waiting.','RESUME');else $('overlay').classList.add('hidden');updateHUD()}
+function restart(){if(mode==='title'){startGame();return}resetRoom();mode='playing';$('overlay').classList.add('hidden');say('Room restarted');}
+function flipGravity(){
+ if(mode!=='playing'||paused)return;
+ if(flips<=0){say('No flips left! Restart the room to try again.');beep(150);return}
+ gravity=(gravity+1)%4;flips--;player.grounded=false;
+ // Retain only a modest part of old velocity so gravity changes feel responsive.
+ player.vx*=.35;player.vy*=.35;
+ [...heavy,...light].forEach(o=>{o.vx*=.4;o.vy*=.4});
+ // A new force direction can point an object into a nearby surface. Resolve any
+ // existing overlaps immediately rather than leaving the next physics step wedged.
+ for(const body of [player,...heavy,...light])separateBody(body);
+ updateHUD();say('Gravity: '+dirs[gravity].label);beep(300+gravity*130);
+}
+function jump(){if(mode!=='playing'||paused)return;if(player.grounded){const d=dirs[gravity];player.vx-=d.x*10.5;player.vy-=d.y*10.5;player.grounded=false;beep(520)}}
+function solidsFor(o){return [...walls,...heavy,...light].filter(s=>s!==o)}
+function moveAxis(o,axis,delta){
+ if(axis==='x')o.x+=delta;else o.y+=delta;
+ o.x=clamp(o.x,24,W-24-o.w);o.y=clamp(o.y,24,H-24-o.h);
+ // All bodies collide on each axis, not just with static walls. This prevents
+ // heavy/light blocks passing through one another and keeps player collision stable.
+ for(const solid of solidsFor(o)){if(rectsOverlap(o,solid)){
+   if(axis==='x'){if(delta>0)o.x=solid.x-o.w;else if(delta<0)o.x=solid.x+solid.w;o.vx=0}
+   else{if(delta>0)o.y=solid.y-o.h;else if(delta<0)o.y=solid.y+solid.h;o.vy=0}
+ }}
+}
+function separateBody(o){
+ // Push a body out along the shortest available axis. Repeat because resolving
+ // one overlap can expose another, especially in corners with movable blocks.
+ for(let pass=0;pass<12;pass++){
+  const hit=solidsFor(o).find(s=>rectsOverlap(o,s));if(!hit)break;
+  const options=[
+   {x:hit.x-o.w-.5,y:o.y,dist:Math.abs(o.x+o.w-hit.x)},
+   {x:hit.x+hit.w+.5,y:o.y,dist:Math.abs(hit.x+hit.w-o.x)},
+   {x:o.x,y:hit.y-o.h-.5,dist:Math.abs(o.y+o.h-hit.y)},
+   {x:o.x,y:hit.y+hit.h+.5,dist:Math.abs(hit.y+hit.h-o.y)}
+  ].sort((a,b)=>a.dist-b.dist);
+  let placed=false;
+  for(const q of options){const ox=o.x,oy=o.y;o.x=clamp(q.x,24,W-24-o.w);o.y=clamp(q.y,24,H-24-o.h);
+   if(!solidsFor(o).some(s=>rectsOverlap(o,s))){placed=true;break}o.x=ox;o.y=oy}
+  if(!placed){o.vx=0;o.vy=0;break}
+ }
+}
+function supported(o,dx,dy){
+ const probe={x:o.x+dx*3,y:o.y+dy*3,w:o.w,h:o.h};
+ return walls.some(w=>rectsOverlap(probe,w))||[...heavy,...light].some(b=>b!==o&&rectsOverlap(probe,b));
+}
+function physics(o,isPlayer=false,scale=1){
+ const d=dirs[gravity],sgn=o.type==='light'?-1:1;
+ // Scale acceleration and displacement to elapsed time so physics behaves similarly
+ // at 30, 60 and 120 Hz rather than depending on how many frames are rendered.
+ o.vx+=d.x*GRAVITY*sgn*scale;o.vy+=d.y*GRAVITY*sgn*scale;
+ // Small damping makes sideways gravity controllable without removing inertia.
+ o.vx=clamp(o.vx,-7,7);o.vy=clamp(o.vy,-7,7);
+ if(isPlayer){
+   const tangentX=d.y!==0?1:0,tangentY=d.x!==0?1:0;
+   const input=(keysDown.right?1:0)-(keysDown.left?1:0);
+   if(d.y!==0)o.vx=clamp(o.vx+input*.65*scale,-MAX_SPEED,MAX_SPEED);
+   else o.vy=clamp(o.vy+input*.65*scale,-MAX_SPEED,MAX_SPEED);
+   // Jump input is mapped opposite gravity; only when grounded.
+   const gx=d.x,gy=d.y;
+   o.grounded=supported(o,gx,gy);
+   if(keysDown.jump&&o.grounded&&!o._jumpLatch){jump();o._jumpLatch=true}
+   if(!keysDown.jump)o._jumpLatch=false;
+ }
+ moveAxis(o,'x',o.vx*scale);moveAxis(o,'y',o.vy*scale);
+ if(isPlayer){
+   // Resolve collisions against movable blocks too.
+   for(const b of [...heavy,...light])if(rectsOverlap(o,b)){
+     const ox=Math.min(o.x+o.w-b.x,b.x+b.w-o.x),oy=Math.min(o.y+o.h-b.y,b.y+b.h-o.y);
+     if(ox<oy){if(o.x+o.w/2<b.x+b.w/2)o.x=b.x-o.w;else o.x=b.x+b.w;o.vx=0}
+     else{if(o.y+o.h/2<b.y+b.h/2)o.y=b.y-o.h;else o.y=b.y+b.h;o.vy=0}
+   }
+   o.grounded=supported(o,d.x,d.y);
+ }
+}
+function update(dt){
+ if(mode!=='playing'||paused)return;
+ // Stable substeps reduce tunnelling at higher velocities.
+ const steps=Math.max(1,Math.ceil(dt/8)),step=dt/steps,scale=step/(1000/60);
+ for(let s=0;s<steps;s++){
+   // Move blocks first, then player.
+   for(const b of heavy)physics(b,false,scale);
+   for(const b of light)physics(b,false,scale);
+   physics(player,true,scale);
+ }
+ if(!key.taken&&rectsOverlap(player,key)){key.taken=true;hasKey=true;say('Key collected! Find the exit.');beep(880,.16);updateHUD()}
+ if(rectsOverlap(player,exit)){
+   if(hasKey){if(room<levels.length-1){room++;resetRoom();say('Room cleared! Next room.');beep(760,.2)}else{mode='won';updateHUD();showOverlay('YOU ESCAPED!','You mastered all three Gravity Flip Rooms. Play again and try to use fewer flips.','PLAY AGAIN',()=>{startGame()});beep(1000,.3)}}
+   else say('The exit is locked. Find the golden key!');
+ }
+}
+function drawBlock(o){
+ ctx.fillStyle=o.type==='heavy'?'#dca93b':'#55ddcd';ctx.fillRect(o.x,o.y,o.w,o.h);
+ ctx.strokeStyle=o.type==='heavy'?'#ffe39a':'#b8fff4';ctx.lineWidth=3;ctx.strokeRect(o.x+2,o.y+2,o.w-4,o.h-4);
+ ctx.fillStyle='#10213d';ctx.fillRect(o.x+8,o.y+8,6,6);ctx.fillRect(o.x+o.w-14,o.y+8,6,6);
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // Grid background
+ ctx.strokeStyle='#122441';ctx.lineWidth=1;
+ for(let x=24;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,24);ctx.lineTo(x,H-24);ctx.stroke()}
+ for(let y=24;y<H;y+=40){ctx.beginPath();ctx.moveTo(24,y);ctx.lineTo(W-24,y);ctx.stroke()}
+ // Subtle gravity direction indicator
+ const d=dirs[gravity];ctx.fillStyle='#10213d';ctx.fillRect(W-74,38,52,52);ctx.strokeStyle='#3a5274';ctx.strokeRect(W-74,38,52,52);
+ ctx.fillStyle='#ffc247';ctx.font='bold 32px system-ui';ctx.textAlign='center';ctx.fillText(['↓','←','↑','→'][gravity],W-48,75);
+ // Static platforms
+ for(const w of walls){ctx.fillStyle='#253e61';ctx.fillRect(w.x,w.y,w.w,w.h);ctx.fillStyle='#3c5b82';if(w.w>w.h)ctx.fillRect(w.x,w.y,w.w,5);else ctx.fillRect(w.x,w.y,5,w.h)}
+ // Exit
+ ctx.fillStyle=hasKey?'#2ee3b7':'#3b4d68';ctx.fillRect(exit.x,exit.y,exit.w,exit.h);
+ ctx.strokeStyle=hasKey?'#a5ffdf':'#8294b1';ctx.lineWidth=3;ctx.strokeRect(exit.x+4,exit.y+4,exit.w-8,exit.h-8);
+ ctx.fillStyle='#07152b';ctx.beginPath();ctx.arc(exit.x+exit.w-11,exit.y+exit.h/2,3,0,Math.PI*2);ctx.fill();
+ // Key
+ if(!key.taken){ctx.save();ctx.translate(key.x+11,key.y+11);ctx.rotate(Math.sin(performance.now()/250)*.15);ctx.strokeStyle='#ffd45c';ctx.lineWidth=5;ctx.beginPath();ctx.arc(-4,-2,7,0,Math.PI*2);ctx.moveTo(3,2);ctx.lineTo(12,11);ctx.lineTo(8,14);ctx.moveTo(7,7);ctx.lineTo(4,10);ctx.stroke();ctx.restore()}
+ heavy.forEach(drawBlock);light.forEach(drawBlock);
+ // Player
+ ctx.fillStyle='#f4f0e4';ctx.fillRect(player.x,player.y,player.w,player.h);
+ ctx.fillStyle='#ffc247';ctx.fillRect(player.x+3,player.y+3,player.w-6,8);
+ ctx.fillStyle='#17304f';ctx.fillRect(player.x+5,player.y+13,6,6);ctx.fillRect(player.x+17,player.y+13,6,6);
+ ctx.fillStyle='#65e5d0';ctx.fillRect(player.x+7,player.y+25,14,5);
+ // Gravity trail
+ ctx.globalAlpha=.45;ctx.fillStyle='#65e5d0';ctx.beginPath();ctx.arc(player.x+player.w/2-d.x*18,player.y+player.h/2-d.y*18,4,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+ if(paused){ctx.fillStyle='#07152b88';ctx.fillRect(0,0,W,H)}
+}
+function frame(now){const dt=Math.min(24,now-(last||now));last=now;update(dt);draw();requestAnimationFrame(frame)}
+document.addEventListener('keydown',e=>{
+ const k=e.key.toLowerCase();
+ if(['arrowleft','arrowright','arrowup',' ','arrowdown'].includes(k))e.preventDefault();
+ if((k===' '||k==='spacebar')&&!e.repeat){flipGravity();return}
+ if(k==='p'&&!e.repeat){pause();return}
+ if(k==='r'&&!e.repeat){restart();return}
+ if(k==='arrowleft'||k==='a')keysDown.left=true;
+ if(k==='arrowright'||k==='d')keysDown.right=true;
+ if(k==='arrowup'||k==='w')keysDown.jump=true;
+});
+document.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keysDown.left=false;if(k==='arrowright'||k==='d')keysDown.right=false;if(k==='arrowup'||k==='w')keysDown.jump=false});
+window.addEventListener('blur',()=>{keysDown={};document.querySelectorAll('[data-key]').forEach(btn=>{btn.blur()})});
+document.querySelectorAll('[data-key]').forEach(btn=>{
+ const k=btn.dataset.key,down=e=>{e.preventDefault();keysDown[k]=true},up=e=>{e.preventDefault();keysDown[k]=false};
+ btn.addEventListener('pointerdown',down);['pointerup','pointerleave','pointercancel'].forEach(ev=>btn.addEventListener(ev,up));
+});
+$('flipBtn').addEventListener('click',flipGravity);$('pauseBtn').addEventListener('click',pause);$('restartBtn').addEventListener('click',restart);
+$('soundBtn').addEventListener('click',()=>{sound=!sound;$('soundBtn').textContent='♫ Sound: '+(sound?'On':'Off');if(sound)beep(660)});
+$('mainBtn').addEventListener('click',startGame);
+$('helpBtn').addEventListener('click',()=>showOverlay('HOW TO PLAY','Move with A/D or the arrow keys. Jump with W/Up when grounded. Press Space or FLIP to rotate gravity through four directions. Collect the gold key and enter the green exit. Heavy blocks follow gravity; cyan light blocks move against it. You have six flips per room.','BACK',()=>showOverlay('GRAVITY FLIP ROOMS','Collect the golden key, then reach the exit. Gravity pulls the player and heavy blocks; light blocks move against it. You have six flips per room.','START GAME',startGame)));
+resetRoom();mode='title';updateHUD();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
