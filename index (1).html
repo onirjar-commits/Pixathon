@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gravity Flip Rooms</title>
+<style>
+:root{--navy:#07152b;--panel:#10213d;--gold:#ffc247;--blue:#284366;--text:#f5f0df;--muted:#aabbd2;--cyan:#65e5d0;--red:#ff7373}
+*{box-sizing:border-box}
+body{margin:0;background:var(--navy);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+button{font:inherit;cursor:pointer;color:var(--text);background:var(--blue);border:1px solid #45658e;border-radius:10px;padding:10px 14px;font-weight:700}
+button:hover{filter:brightness(1.15)}button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.app{max-width:1050px;margin:auto;padding:18px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+h1{font-size:clamp(1.5rem,4vw,2.3rem);margin:0;font-weight:900;letter-spacing:.04em}
+h1 span{color:var(--gold)}
+.subtitle{color:var(--muted);margin:4px 0 16px}
+.actions,.stats,.mobile-controls{display:flex;gap:8px;flex-wrap:wrap}
+.stats{margin:14px 0}
+.stat{background:#0e1d35;border:1px solid #2d476a;border-radius:10px;padding:10px 13px;font-size:.88rem}
+.stat b{color:var(--gold)}
+.game-shell{position:relative;border:2px solid #365579;border-radius:16px;padding:8px;background:#0c1b32;overflow:hidden}
+canvas{display:block;width:100%;height:auto;aspect-ratio:16/10;background:#071329;border-radius:8px;touch-action:none}
+.overlay{position:absolute;inset:8px;display:flex;align-items:center;justify-content:center;background:#061226df;border-radius:8px;padding:18px}
+.overlay.hidden{display:none}
+.modal{max-width:540px;text-align:center;background:#11233f;border:2px solid var(--gold);border-radius:16px;padding:clamp(18px,4vw,32px)}
+.modal h2{margin:0 0 12px;color:var(--gold);font-size:clamp(1.35rem,4vw,2rem)}
+.modal p{line-height:1.6;color:#c0cde0}
+.modal .actions{justify-content:center;margin-top:18px}
+.primary{background:var(--gold);color:#14213a;border-color:#ffe09a}
+.preview-btn{border-color:var(--gold);color:var(--gold);padding:8px 11px;font-size:.82rem}
+.preview-btn[aria-pressed="true"]{background:var(--gold);color:#14213a;box-shadow:0 0 0 2px #ffc24733}
+.help{color:var(--muted);font-size:.9rem;line-height:1.8;margin:12px 0}
+.mobile-controls{margin-top:12px;align-items:center}
+.mobile-controls button{min-width:48px;min-height:46px}
+.flip{background:#4de0bb;color:#082a2b;border-color:#8af4d8}
+.spacer{flex:1}
+.message{min-height:24px;color:var(--gold);font-size:.9rem;margin-top:8px}
+footer{color:#7188a7;text-align:center;font-size:.75rem;letter-spacing:.12em;margin:18px 0 4px}
+@media(max-width:600px){.app{padding:12px}.stat{padding:8px;font-size:.78rem}.actions button{padding:9px}.subtitle{font-size:.9rem}.mobile-controls{justify-content:center}}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div><h1>GRAVITY <span>FLIP</span> ROOMS</h1><p class="subtitle">A tiny physics puzzle about thinking sideways.</p></div>
+  <div class="actions">
+    <button id="pauseBtn">Ⅱ Pause</button><button id="soundBtn">♫ Sound: Off</button><button id="restartBtn">↻ Restart</button><button id="previewBtn" class="preview-btn" aria-pressed="false" title="Preview forces after the next gravity flip (V)">PREVIEW · V</button>
+  </div>
+</header>
+<div class="stats">
+  <div class="stat">ROOM <b id="roomLabel">01 / 03</b></div>
+  <div class="stat">GRAVITY <b id="gravityLabel">↓ DOWN</b></div>
+  <div class="stat">FLIPS LEFT <b id="flipsLabel">6</b></div>
+  <div class="stat">KEY <b id="keyLabel">◇ MISSING</b></div>
+  <div class="stat">STATUS <b id="statusLabel">EXPLORE</b></div>
+</div>
+<div class="game-shell">
+<canvas id="game" width="960" height="600" aria-label="Gravity Flip Rooms game"></canvas>
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <h2 id="modalTitle">GRAVITY FLIP ROOMS</h2>
+    <p id="modalText">Collect the golden key, then reach the exit. Gravity pulls the player and heavy blocks; light blocks drift the opposite way. You have six flips per room.</p>
+    <div class="actions"><button class="primary" id="mainBtn">START GAME</button><button id="helpBtn">HOW TO PLAY</button></div>
+  </div>
+</div>
+</div>
+<div class="help"><b>MOVE</b> ← → / A D &nbsp; <b>JUMP</b> ↑ / W (when grounded)<br>
+<b>FLIP GRAVITY</b> Space or green button &nbsp; <b>PAUSE</b> P &nbsp; <b>RESTART ROOM</b> R<br>
+Gold key unlocks the green exit. Heavy blocks are amber; light blocks are cyan.</div>
+<div class="mobile-controls">
+  <button data-key="left" aria-label="Move left">◀</button><button data-key="right" aria-label="Move right">▶</button><button data-key="jump" aria-label="Jump">▲</button>
+  <span class="spacer"></span><button class="flip" id="flipBtn">↻ FLIP</button>
+</div>
+<div class="message" id="message" aria-live="polite"></div>
+<footer>GRAVITY IS A TOOL. USE IT WISELY.</footer>
+</div>
+<script>
+(() => {
+'use strict';
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const $=id=>document.getElementById(id);
+const W=960,H=600,T=40,GRAVITY=0.42,MAX_SPEED=5.0;
+const dirs=[{x:0,y:1,label:'↓ DOWN'},{x:-1,y:0,label:'← LEFT'},{x:0,y:-1,label:'↑ UP'},{x:1,y:0,label:'→ RIGHT'}];
+const levels=[
+ {name:'First Flip',start:{x:95,y:490},key:{x:790,y:170},exit:{x:870,y:500},flips:6,
+  walls:[[0,0,960,24],[0,576,960,24],[0,0,24,600],[936,0,24,600],[210,460,200,24],[470,350,190,24],[700,250,24,150]],
+  heavy:[{x:150,y:360}],light:[{x:550,y:200}]},
+ {name:'Opposite Forces',start:{x:80,y:500},key:{x:820,y:100},exit:{x:870,y:500},flips:6,
+  walls:[[0,0,960,24],[0,576,960,24],[0,0,24,600],[936,0,24,600],[150,440,180,24],[390,340,180,24],[630,240,180,24],[300,130,24,120]],
+  heavy:[{x:220,y:360},{x:520,y:170}],light:[{x:430,y:470},{x:730,y:400}],
+  plate:{x:704,y:560,w:76,h:16},door:{x:820,y:410,w:24,h:166}},
+ {name:'Final Escape',start:{x:75,y:500},key:{x:830,y:80},exit:{x:870,y:500},flips:6,
+  walls:[[0,0,960,24],[0,576,960,24],[0,0,24,600],[936,0,24,600],[140,470,170,24],[370,380,170,24],[600,290,170,24],[350,190,24,100],[690,90,24,120],[455,80,120,24]],
+  heavy:[{x:180,y:350},{x:500,y:280}],light:[{x:300,y:180},{x:730,y:400}]}
+];
+let room=0,player=null,heavy=[],light=[],key=null,exit=null,walls=[],gravity=0,flips=6,hasKey=false,mode='title',paused=false,sound=false,previewOn=false,audio=null,last=0,keysDown={},messageTimer=0;
+let plate=null,door=null,plateActive=false,doorOpen=false,flipFlash=0,particles=[],predictionCache=null,predictionAt=0;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function say(s){$('message').textContent=s;clearTimeout(messageTimer);messageTimer=setTimeout(()=>{$('message').textContent=''},2600)}
+function beep(freq=440,duration=.08){if(!sound)return;try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();const o=audio.createOscillator(),g=audio.createGain();o.frequency.value=freq;o.type='square';g.gain.value=.035;o.connect(g);g.connect(audio.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.stop(audio.currentTime+duration)}catch{}}
+function rectsOverlap(a,b){return a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y}
+function resetRoom(){
+ previewOn=false;syncPreviewButton();
+ const L=levels[room];gravity=0;flips=L.flips;hasKey=false;paused=false;
+ player={x:L.start.x,y:L.start.y,w:28,h:34,vx:0,vy:0,grounded:false,spawn:{...L.start}};
+ walls=L.walls.map(a=>({x:a[0],y:a[1],w:a[2],h:a[3]}));
+ heavy=L.heavy.map((o,i)=>({x:o.x,y:o.y,w:36,h:36,vx:0,vy:0,type:'heavy',id:i}));
+ light=L.light.map((o,i)=>({x:o.x,y:o.y,w:30,h:30,vx:0,vy:0,type:'light',id:i}));
+ key={...L.key,w:22,h:22,taken:false};exit={...L.exit,w:38,h:54};
+ plate=L.plate?{...L.plate}:null;door=L.door?{...L.door}:null;plateActive=false;doorOpen=false;
+ particles=[];flipFlash=0;predictionCache=null;predictionAt=0;
+ updateHUD();say('Room '+(room+1)+': '+L.name);
+}
+function startGame(){room=0;resetRoom();mode='playing';$('overlay').classList.add('hidden');last=performance.now();updateHUD();beep(600)}
+function updateHUD(){
+ $('roomLabel').textContent=String(room+1).padStart(2,'0')+' / 03';
+ $('gravityLabel').textContent=dirs[gravity].label;$('flipsLabel').textContent=flips;
+ $('keyLabel').textContent=hasKey?'✓ COLLECTED':'◇ MISSING';
+ $('statusLabel').textContent=(mode==='won'||mode==='levelComplete')?'COMPLETE':paused?'PAUSED':flips===0?'NO FLIPS':room===1&&doorOpen?'DOOR OPEN':'EXPLORE';
+}
+function showOverlay(title,text,button='CONTINUE',action){
+ $('modalTitle').textContent=title;$('modalText').textContent=text;$('mainBtn').textContent=button;
+ $('overlay').classList.remove('hidden');$('mainBtn').onclick=action||(()=>{$('overlay').classList.add('hidden');paused=false;mode='playing';updateHUD()});
+}
+function pause(){if(mode!=='playing')return;paused=!paused;if(paused){setPreview(false);predictionCache=null;showOverlay('PAUSED','Take a breath. Your room is waiting.','RESUME')}else $('overlay').classList.add('hidden');updateHUD()}
+function restart(){if(mode==='title'){startGame();return}resetRoom();mode='playing';$('overlay').classList.add('hidden');updateHUD();say('Room restarted');}
+function flipGravity(){
+ if(mode!=='playing'||paused)return;
+ setPreview(false);
+ if(flips<=0){say('No flips left! Restart the room to try again.');beep(150);return}
+ gravity=(gravity+1)%4;flips--;player.grounded=false;predictionCache=null;predictionAt=0;flipFlash=260;spawnFlipParticles();
+ // Retain only a modest part of old velocity so gravity changes feel responsive.
+ player.vx*=.35;player.vy*=.35;
+ [...heavy,...light].forEach(o=>{o.vx*=.4;o.vy*=.4});
+ // A new force direction can point an object into a nearby surface. Resolve any
+ // existing overlaps immediately rather than leaving the next physics step wedged.
+ for(const body of [player,...heavy,...light])separateBody(body);
+ updateHUD();say('Gravity: '+dirs[gravity].label);beep(300+gravity*130);
+}
+function syncPreviewButton(){const b=$('previewBtn');if(!b)return;b.setAttribute('aria-pressed',String(previewOn));b.textContent=previewOn?'PREVIEW ON · V':'PREVIEW · V'}
+function setPreview(on){previewOn=Boolean(on)&&mode==='playing'&&!paused;syncPreviewButton()}
+function togglePreview(){if(mode!=='playing'||paused)return;setPreview(!previewOn);predictionCache=null;predictionAt=0;if(previewOn)say('Preview: '+dirs[(gravity+1)%4].label+' · ghost blocks show predicted resting positions');}
+function jump(){if(mode!=='playing'||paused)return;if(player.grounded){const d=dirs[gravity];player.vx-=d.x*10.5;player.vy-=d.y*10.5;player.grounded=false;beep(520)}}
+function solidsFor(o){return [...walls,...heavy,...light,...(room===1&&door&&!doorOpen?[door]:[])].filter(s=>s!==o)}
+function moveAxis(o,axis,delta){
+ if(axis==='x'){
+  o.x+=delta;
+  if(o.x<24){o.x=24;if(delta<0)o.vx=0}
+  if(o.x>W-24-o.w){o.x=W-24-o.w;if(delta>0)o.vx=0}
+ }else{
+  o.y+=delta;
+  if(o.y<24){o.y=24;if(delta<0)o.vy=0}
+  if(o.y>H-24-o.h){o.y=H-24-o.h;if(delta>0)o.vy=0}
+ }
+ // All bodies collide on each axis, not just with static walls. This prevents
+ // heavy/light blocks passing through one another and keeps player collision stable.
+ for(const solid of solidsFor(o)){if(rectsOverlap(o,solid)){
+   if(axis==='x'){if(delta>0)o.x=solid.x-o.w;else if(delta<0)o.x=solid.x+solid.w;o.vx=0}
+   else{if(delta>0)o.y=solid.y-o.h;else if(delta<0)o.y=solid.y+solid.h;o.vy=0}
+ }}
+}
+function separateBody(o){
+ // Push a body out along the shortest available axis. Repeat because resolving
+ // one overlap can expose another, especially in corners with movable blocks.
+ for(let pass=0;pass<12;pass++){
+  const hit=solidsFor(o).find(s=>rectsOverlap(o,s));if(!hit)break;
+  const options=[
+   {x:hit.x-o.w-.5,y:o.y,dist:Math.abs(o.x+o.w-hit.x)},
+   {x:hit.x+hit.w+.5,y:o.y,dist:Math.abs(hit.x+hit.w-o.x)},
+   {x:o.x,y:hit.y-o.h-.5,dist:Math.abs(o.y+o.h-hit.y)},
+   {x:o.x,y:hit.y+hit.h+.5,dist:Math.abs(hit.y+hit.h-o.y)}
+  ].sort((a,b)=>a.dist-b.dist);
+  let placed=false;
+  for(const q of options){const ox=o.x,oy=o.y;o.x=clamp(q.x,24,W-24-o.w);o.y=clamp(q.y,24,H-24-o.h);
+   if(!solidsFor(o).some(s=>rectsOverlap(o,s))){placed=true;break}o.x=ox;o.y=oy}
+  if(!placed){o.vx=0;o.vy=0;break}
+ }
+}
+function supported(o,dx,dy){
+ const probe={x:o.x+dx*3,y:o.y+dy*3,w:o.w,h:o.h};
+ return solidsFor(o).some(s=>rectsOverlap(probe,s));
+}
+function physics(o,isPlayer=false,scale=1){
+ const d=dirs[gravity],sgn=o.type==='light'?-1:1;
+ // Scale acceleration and displacement to elapsed time so physics behaves similarly
+ // at 30, 60 and 120 Hz rather than depending on how many frames are rendered.
+ o.vx+=d.x*GRAVITY*sgn*scale;o.vy+=d.y*GRAVITY*sgn*scale;
+ // Small damping makes sideways gravity controllable without removing inertia.
+ o.vx=clamp(o.vx,-7,7);o.vy=clamp(o.vy,-7,7);
+ if(isPlayer){
+   const tangentX=d.y!==0?1:0,tangentY=d.x!==0?1:0;
+   const input=(keysDown.right?1:0)-(keysDown.left?1:0);
+   if(d.y!==0)o.vx=clamp(o.vx+input*.65*scale,-MAX_SPEED,MAX_SPEED);
+   else o.vy=clamp(o.vy+input*.65*scale,-MAX_SPEED,MAX_SPEED);
+   // Jump input is mapped opposite gravity; only when grounded.
+   const gx=d.x,gy=d.y;
+   o.grounded=supported(o,gx,gy);
+   if(keysDown.jump&&o.grounded&&!o._jumpLatch){jump();o._jumpLatch=true}
+   if(!keysDown.jump)o._jumpLatch=false;
+ }
+ moveAxis(o,'x',o.vx*scale);moveAxis(o,'y',o.vy*scale);
+ if(isPlayer){
+   // Resolve collisions against movable blocks too.
+   for(const b of [...heavy,...light])if(rectsOverlap(o,b)){
+     const ox=Math.min(o.x+o.w-b.x,b.x+b.w-o.x),oy=Math.min(o.y+o.h-b.y,b.y+b.h-o.y);
+     if(ox<oy){if(o.x+o.w/2<b.x+b.w/2)o.x=b.x-o.w;else o.x=b.x+b.w;o.vx=0}
+     else{if(o.y+o.h/2<b.y+b.h/2)o.y=b.y-o.h;else o.y=b.y+b.h;o.vy=0}
+   }
+   o.grounded=supported(o,d.x,d.y);
+ }
+}
+function plateIsPressed(playerBody=player,heavyBodies=heavy){
+ if(room!==1||!plate)return false;
+ return rectsOverlap(playerBody,plate)||heavyBodies.some(b=>rectsOverlap(b,plate));
+}
+function updatePressurePlate(){
+ plateActive=plateIsPressed();
+ if(plateActive&&!doorOpen){doorOpen=true;predictionCache=null;say('Pressure plate activated! Door unlocked.');beep(720,.12)}
+}
+function completeRoom(){
+ setPreview(false);
+ const used=levels[room].flips-flips;
+ if(room<levels.length-1){
+  mode='levelComplete';updateHUD();
+  showOverlay('ROOM '+(room+1)+' CLEARED!',levels[room].name+' completed in '+used+' of '+levels[room].flips+' gravity flips. The next room is ready.','NEXT ROOM',()=>{room++;resetRoom();mode='playing';$('overlay').classList.add('hidden');last=performance.now();updateHUD();});
+ }else{
+  mode='won';updateHUD();
+  showOverlay('YOU ESCAPED!','All three rooms cleared. Final room: '+used+' of '+levels[room].flips+' gravity flips. Play again and try to improve your route.','PLAY AGAIN',()=>startGame());
+  beep(1000,.3);
+ }
+}
+function spawnFlipParticles(){
+ if(!player)return;const cx=player.x+player.w/2,cy=player.y+player.h/2;
+ for(let i=0;i<18;i++){const a=(Math.PI*2*i/18)+(Math.random()-.5)*.25,s=1.1+Math.random()*2.5;particles.push({x:cx,y:cy,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:260,maxLife:260,color:i%3?'#ffc247':'#65e5d0',size:2+Math.random()*3})}
+}
+function updateEffects(dt){
+ flipFlash=Math.max(0,flipFlash-dt);
+ particles=particles.filter(p=>p.life>0);
+ for(const p of particles){p.x+=p.vx*dt/16.667;p.y+=p.vy*dt/16.667;p.life-=dt;p.vx*=.985;p.vy*=.985}
+}
+function update(dt){
+ if(mode!=='playing'||paused)return;
+ updateEffects(dt);
+ // Stable substeps reduce tunnelling at higher velocities.
+ const steps=Math.max(1,Math.ceil(dt/8)),step=dt/steps,scale=step/(1000/60);
+ for(let s=0;s<steps;s++){
+   // Move blocks first, then player.
+   for(const b of heavy)physics(b,false,scale);
+   for(const b of light)physics(b,false,scale);
+   physics(player,true,scale);
+   updatePressurePlate();
+ }
+ if(!key.taken&&rectsOverlap(player,key)){key.taken=true;hasKey=true;say('Key collected! Find the exit.');beep(880,.16);updateHUD()}
+ if(rectsOverlap(player,exit)){
+   if(hasKey){completeRoom();return}
+   else say('The exit is locked. Find the golden key!');
+ }
+}
+function drawBlock(o){
+ ctx.fillStyle=o.type==='heavy'?'#dca93b':'#55ddcd';ctx.fillRect(o.x,o.y,o.w,o.h);
+ ctx.strokeStyle=o.type==='heavy'?'#ffe39a':'#b8fff4';ctx.lineWidth=3;ctx.strokeRect(o.x+2,o.y+2,o.w-4,o.h-4);
+ ctx.fillStyle='#10213d';ctx.fillRect(o.x+8,o.y+8,6,6);ctx.fillRect(o.x+o.w-14,o.y+8,6,6);
+}
+function drawForceArrow(body,dir,color,label){
+ const cx=body.x+body.w/2,cy=body.y+body.h/2;
+ const half=(dir.x!==0?body.w:body.h)/2;
+ const sx=cx+dir.x*(half+5),sy=cy+dir.y*(half+5),ex=sx+dir.x*25,ey=sy+dir.y*25;
+ ctx.save();ctx.strokeStyle=color;ctx.fillStyle=color;ctx.lineWidth=4;ctx.lineCap='round';
+ ctx.beginPath();ctx.moveTo(sx,sy);ctx.lineTo(ex,ey);ctx.stroke();
+ const a=Math.atan2(dir.y,dir.x),head=9;
+ ctx.beginPath();ctx.moveTo(ex,ey);ctx.lineTo(ex-head*Math.cos(a-.55),ey-head*Math.sin(a-.55));ctx.lineTo(ex-head*Math.cos(a+.55),ey-head*Math.sin(a+.55));ctx.closePath();ctx.fill();
+ if(label){ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.lineWidth=3;ctx.strokeStyle='#07152b';ctx.strokeText(label,cx,body.y-7);ctx.fillStyle=color;ctx.fillText(label,cx,body.y-7)}
+ ctx.restore();
+}
+function predictRestingPositions(){
+ // Run the existing physics/collision functions against cloned bodies. All global
+ // references are restored in finally, so previewing cannot advance the real game.
+ const originals={player,heavy,light,gravity,keysDown,plateActive,doorOpen};
+ const clone=o=>({...o});
+ let simulatedStable=0,previous='';
+ try{
+  player=clone(player);heavy=heavy.map(clone);light=light.map(clone);
+  gravity=(gravity+1)%dirs.length;keysDown={};plateActive=originals.plateActive;doorOpen=originals.doorOpen;
+  const bodies=()=>[player,...heavy,...light];
+  for(let frame=0;frame<360;frame++){
+   for(const b of heavy)physics(b,false,1);
+   for(const b of light)physics(b,false,1);
+   physics(player,true,1);
+   plateActive=plateIsPressed(player,heavy);if(plateActive)doorOpen=true;
+   // If a closing door would intersect a body, the forecast is not trustworthy.
+   if(room===1&&door&&!doorOpen&&bodies().some(b=>rectsOverlap(b,door)))return null;
+   const now=bodies().map(b=>[b.x,b.y,b.vx,b.vy].map(n=>Math.round(n*10)/10).join(',')).join('|');
+   const slow=bodies().every(b=>Math.abs(b.vx)<.06&&Math.abs(b.vy)<.06);
+   if(slow&&now===previous)simulatedStable++;else simulatedStable=0;
+   if(simulatedStable>=10)return {heavy:heavy.map(clone),light:light.map(clone)};
+   previous=now;
+  }
+  return null;
+ }catch(err){return null}
+ finally{player=originals.player;heavy=originals.heavy;light=originals.light;gravity=originals.gravity;keysDown=originals.keysDown;plateActive=originals.plateActive;doorOpen=originals.doorOpen}
+}
+function drawGhost(body,color){
+ ctx.save();ctx.globalAlpha=.28;ctx.fillStyle=color;ctx.fillRect(body.x,body.y,body.w,body.h);ctx.globalAlpha=.82;ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.strokeRect(body.x+1,body.y+1,body.w-2,body.h-2);ctx.setLineDash([]);ctx.restore();
+}
+function drawGravityPreview(){
+ if(!previewOn||mode!=='playing'||paused)return;
+ const next=dirs[(gravity+1)%dirs.length],opposite={x:-next.x,y:-next.y};
+ // The preview is purely a canvas overlay: it reads positions and never mutates the real game state.
+ const now=performance.now();
+ if(!predictionCache||now-predictionAt>350){predictionCache=predictRestingPositions();predictionAt=now}
+ if(predictionCache){predictionCache.heavy.forEach(b=>drawGhost(b,'#ffc247'));predictionCache.light.forEach(b=>drawGhost(b,'#65e5d0'));}
+ drawForceArrow(player,next,'#ffc247','PLAYER');
+ heavy.forEach(b=>drawForceArrow(b,next,'#ffc247','HEAVY'));
+ light.forEach(b=>drawForceArrow(b,opposite,'#65e5d0','LIGHT'));
+ ctx.save();ctx.fillStyle='#10213df0';ctx.strokeStyle='#ffc247';ctx.lineWidth=1.5;ctx.fillRect(18,34,230,34);ctx.strokeRect(18,34,230,34);ctx.fillStyle='#f5f0df';ctx.font='bold 13px system-ui';ctx.textAlign='left';ctx.fillText('NEXT FLIP: '+next.label+'  ·  V TO HIDE',29,56);ctx.restore();
+}
+function draw(){
+ ctx.clearRect(0,0,W,H);
+ // Grid background
+ ctx.strokeStyle='#122441';ctx.lineWidth=1;
+ for(let x=24;x<W;x+=40){ctx.beginPath();ctx.moveTo(x,24);ctx.lineTo(x,H-24);ctx.stroke()}
+ for(let y=24;y<H;y+=40){ctx.beginPath();ctx.moveTo(24,y);ctx.lineTo(W-24,y);ctx.stroke()}
+ // Subtle gravity direction indicator
+ const d=dirs[gravity];ctx.fillStyle='#10213d';ctx.fillRect(W-74,38,52,52);ctx.strokeStyle='#3a5274';ctx.strokeRect(W-74,38,52,52);
+ ctx.fillStyle='#ffc247';ctx.font='bold 32px system-ui';ctx.textAlign='center';ctx.fillText(['↓','←','↑','→'][gravity],W-48,75);
+ // Static platforms
+ for(const w of walls){ctx.fillStyle='#253e61';ctx.fillRect(w.x,w.y,w.w,w.h);ctx.fillStyle='#3c5b82';if(w.w>w.h)ctx.fillRect(w.x,w.y,w.w,5);else ctx.fillRect(w.x,w.y,5,w.h)}
+ // Room 2 pressure plate and linked door
+ if(plate){ctx.fillStyle=plateActive?'#65e5d0':'#ffc247';ctx.fillRect(plate.x,plate.y,plate.w,plate.h);ctx.fillStyle='#10213d';ctx.fillRect(plate.x+5,plate.y+4,plate.w-10,4);ctx.fillStyle=plateActive?'#65e5d0':'#aabbd2';ctx.font='bold 11px system-ui';ctx.textAlign='center';ctx.fillText(plateActive?'PLATE ACTIVE':'PRESSURE PLATE',plate.x+plate.w/2,plate.y-7)}
+ if(door){ctx.fillStyle=doorOpen?'#65e5d055':'#5c6e8a';ctx.fillRect(door.x,door.y,door.w,door.h);ctx.strokeStyle=doorOpen?'#65e5d0':'#aabbd2';ctx.lineWidth=3;ctx.strokeRect(door.x+2,door.y+2,door.w-4,door.h-4);if(!doorOpen){ctx.fillStyle='#ffc247';ctx.fillRect(door.x+7,door.y+door.h/2-8,10,16)}else{ctx.strokeStyle='#65e5d0';ctx.lineWidth=2;for(let y=door.y+12;y<door.y+door.h-8;y+=20){ctx.beginPath();ctx.moveTo(door.x+5,y);ctx.lineTo(door.x+door.w-5,y);ctx.stroke()}}}
+ // Exit
+ ctx.fillStyle=hasKey?'#2ee3b7':'#3b4d68';ctx.fillRect(exit.x,exit.y,exit.w,exit.h);
+ ctx.strokeStyle=hasKey?'#a5ffdf':'#8294b1';ctx.lineWidth=3;ctx.strokeRect(exit.x+4,exit.y+4,exit.w-8,exit.h-8);
+ ctx.fillStyle='#07152b';ctx.beginPath();ctx.arc(exit.x+exit.w-11,exit.y+exit.h/2,3,0,Math.PI*2);ctx.fill();
+ // Key
+ if(!key.taken){ctx.save();ctx.translate(key.x+11,key.y+11);ctx.rotate(Math.sin(performance.now()/250)*.15);ctx.strokeStyle='#ffd45c';ctx.lineWidth=5;ctx.beginPath();ctx.arc(-4,-2,7,0,Math.PI*2);ctx.moveTo(3,2);ctx.lineTo(12,11);ctx.lineTo(8,14);ctx.moveTo(7,7);ctx.lineTo(4,10);ctx.stroke();ctx.restore()}
+ heavy.forEach(drawBlock);light.forEach(drawBlock);
+ // Player
+ ctx.fillStyle='#f4f0e4';ctx.fillRect(player.x,player.y,player.w,player.h);
+ ctx.fillStyle='#ffc247';ctx.fillRect(player.x+3,player.y+3,player.w-6,8);
+ ctx.fillStyle='#17304f';ctx.fillRect(player.x+5,player.y+13,6,6);ctx.fillRect(player.x+17,player.y+13,6,6);
+ ctx.fillStyle='#65e5d0';ctx.fillRect(player.x+7,player.y+25,14,5);
+ // Decorative flip particles are render-only and never enter collision calculations.
+ for(const p of particles){ctx.save();ctx.globalAlpha=Math.max(0,p.life/p.maxLife);ctx.fillStyle=p.color;ctx.fillRect(p.x,p.y,p.size,p.size);ctx.restore()}
+ if(flipFlash>0){ctx.save();ctx.globalAlpha=(flipFlash/260)*.42;ctx.strokeStyle='#ffc247';ctx.lineWidth=7;ctx.strokeRect(4,4,W-8,H-8);ctx.fillStyle='#10213de8';ctx.fillRect(W/2-118,18,236,34);ctx.globalAlpha=Math.min(1,flipFlash/180);ctx.fillStyle='#ffc247';ctx.font='bold 15px system-ui';ctx.textAlign='center';ctx.fillText('GRAVITY SHIFT  '+dirs[gravity].label,W/2,40);ctx.restore()}
+ // Gravity trail
+ ctx.globalAlpha=.45;ctx.fillStyle='#65e5d0';ctx.beginPath();ctx.arc(player.x+player.w/2-d.x*18,player.y+player.h/2-d.y*18,4,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+ drawGravityPreview();
+ if(paused){ctx.fillStyle='#07152b88';ctx.fillRect(0,0,W,H)}
+}
+function frame(now){const dt=Math.min(24,now-(last||now));last=now;update(dt);draw();requestAnimationFrame(frame)}
+document.addEventListener('keydown',e=>{
+ const k=e.key.toLowerCase();
+ if(['arrowleft','arrowright','arrowup',' ','arrowdown'].includes(k))e.preventDefault();
+ if((k===' '||k==='spacebar')&&!e.repeat){flipGravity();return}
+ if(k==='p'&&!e.repeat){pause();return}
+ if(k==='r'&&!e.repeat){restart();return}
+ if(k==='v'&&!e.repeat){togglePreview();return}
+ if(k==='arrowleft'||k==='a')keysDown.left=true;
+ if(k==='arrowright'||k==='d')keysDown.right=true;
+ if(k==='arrowup'||k==='w')keysDown.jump=true;
+});
+document.addEventListener('keyup',e=>{const k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keysDown.left=false;if(k==='arrowright'||k==='d')keysDown.right=false;if(k==='arrowup'||k==='w')keysDown.jump=false});
+window.addEventListener('blur',()=>{keysDown={};document.querySelectorAll('[data-key]').forEach(btn=>{btn.blur()})});
+document.querySelectorAll('[data-key]').forEach(btn=>{
+ const k=btn.dataset.key,down=e=>{e.preventDefault();keysDown[k]=true},up=e=>{e.preventDefault();keysDown[k]=false};
+ btn.addEventListener('pointerdown',down);['pointerup','pointerleave','pointercancel'].forEach(ev=>btn.addEventListener(ev,up));
+});
+$('flipBtn').addEventListener('click',flipGravity);$('pauseBtn').addEventListener('click',pause);$('restartBtn').addEventListener('click',restart);$('previewBtn').addEventListener('click',togglePreview);
+$('soundBtn').addEventListener('click',()=>{sound=!sound;$('soundBtn').textContent='♫ Sound: '+(sound?'On':'Off');if(sound)beep(660)});
+$('mainBtn').onclick=startGame;
+$('helpBtn').addEventListener('click',()=>showOverlay('HOW TO PLAY','Move with A/D or the arrow keys. Jump with W/Up when grounded. Press Space or FLIP to rotate gravity through four directions. Press V or PREVIEW to inspect the next flip. In Room 2, stand on the pressure plate or push a heavy block onto it to unlock the door. Collect the gold key and enter the green exit. Heavy blocks follow gravity; cyan light blocks move against it. You have six flips per room.','BACK',()=>showOverlay('GRAVITY FLIP ROOMS','Collect the golden key, then reach the exit. Gravity pulls the player and heavy blocks; light blocks move against it. You have six flips per room.','START GAME',startGame)));
+resetRoom();mode='title';updateHUD();requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
